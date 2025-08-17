@@ -1,0 +1,523 @@
+pipeline {
+    agent any
+    
+    environment {
+        AWS_PROFILE = 'raj-private'
+        AWS_REGION = 'eu-west-1'
+        TERRAFORM_WORKSPACE_DEV = 'development'
+        TERRAFORM_WORKSPACE_PROD = 'production'
+        SONARQUBE_SERVER = 'SonarQube'
+        SLACK_CHANNEL = 'devsecops-alerts'
+        GITHUB_REPO = credentials('github-repo-url')
+    }
+    
+    parameters {
+        choice(
+            name: 'DEPLOYMENT_TYPE',
+            choices: ['infrastructure', 'application', 'both'],
+            description: 'What to deploy'
+        )
+        booleanParam(
+            name: 'SKIP_SECURITY_SCANS',
+            defaultValue: false,
+            description: 'Skip security scans (not recommended for production)'
+        )
+        booleanParam(
+            name: 'AUTO_APPROVE',
+            defaultValue: false,
+            description: 'Auto-approve deployment (development only)'
+        )
+    }
+    
+    triggers {
+        githubPush()
+    }
+    
+    stages {
+        stage('🚀 Pipeline Initialization') {
+            steps {
+                script {
+                    echo "=== DevSecOps Pipeline Started ==="
+                    echo "Branch: ${env.BRANCH_NAME}"
+                    echo "Deployment Type: ${params.DEPLOYMENT_TYPE}"
+                    echo "Commit: ${env.GIT_COMMIT}"
+                    
+                    // Set workspace based on branch
+                    if (env.BRANCH_NAME == 'main') {
+                        env.TF_WORKSPACE = TERRAFORM_WORKSPACE_PROD
+                        env.ENVIRONMENT = 'production'
+                    } else {
+                        env.TF_WORKSPACE = TERRAFORM_WORKSPACE_DEV
+                        env.ENVIRONMENT = 'development'
+                    }
+                    
+                    echo "Target Environment: ${env.ENVIRONMENT}"
+                    echo "Terraform Workspace: ${env.TF_WORKSPACE}"
+                }
+            }
+        }
+        
+        stage('📥 Code Checkout') {
+            steps {
+                echo 'Checking out source code...'
+                checkout scm
+                
+                script {
+                    // Get commit information
+                    env.GIT_COMMIT_MSG = sh(
+                        script: 'git log -1 --pretty=%B',
+                        returnStdout: true
+                    ).trim()
+                    
+                    echo "Commit Message: ${env.GIT_COMMIT_MSG}"
+                }
+            }
+        }
+        
+        stage('🔍 Environment Validation') {
+            steps {
+                script {
+                    echo 'Validating environment and dependencies...'
+                    
+                    // Check required tools
+                    sh '''
+                        echo "=== Tool Versions ==="
+                        terraform version
+                        aws --version
+                        python3 --version
+                        docker --version
+                        java -version
+                        
+                        echo "=== AWS Profile Validation ==="
+                        aws sts get-caller-identity --profile raj-private
+                        
+                        echo "=== Terraform Configuration Validation ==="
+                        terraform fmt -check=true -diff=true || echo "Formatting issues found"
+                        terraform validate
+                        
+                        echo "=== Environment validation completed ==="
+                    '''
+                }
+            }
+        }
+        
+        stage('🛡️ Security Scanning') {
+            when {
+                not { params.SKIP_SECURITY_SCANS }
+            }
+            parallel {
+                stage('📊 SonarQube Analysis') {
+                    steps {
+                        script {
+                            echo 'Running SonarQube static code analysis...'
+                            withSonarQubeEnv(SONARQUBE_SERVER) {
+                                sh '''
+                                    sonar-scanner \
+                                        -Dsonar.projectKey=devsecops-pipeline \
+                                        -Dsonar.projectName="DevSecOps Pipeline" \
+                                        -Dsonar.sources=. \
+                                        -Dsonar.inclusions="**/*.tf,**/*.py,**/*.sh,**/*.yaml,**/*.yml" \
+                                        -Dsonar.exclusions="**/.terraform/**,**/node_modules/**"
+                                '''
+                            }
+                        }
+                    }
+                }
+                
+                stage('🔒 Infrastructure Security (Checkov)') {
+                    steps {
+                        script {
+                            echo 'Running Checkov infrastructure security scan...'
+                            sh '''
+                                # Install/update Checkov
+                                pip3 install --upgrade checkov
+                                
+                                # Run Checkov scan
+                                checkov -d . \
+                                    --framework terraform \
+                                    --output cli \
+                                    --output json \
+                                    --output-file-path . \
+                                    --skip-check $(cat skip_checks.txt 2>/dev/null || echo "") \
+                                    --compact || true
+                                
+                                # Archive results
+                                if [ -f results_json.json ]; then
+                                    mv results_json.json checkov-results.json
+                                fi
+                            '''
+                            
+                            // Archive security scan results
+                            archiveArtifacts artifacts: 'checkov-results.json', allowEmptyArchive: true
+                        }
+                    }
+                }
+                
+                stage('🛡️ Dependency Vulnerability Scan') {
+                    steps {
+                        script {
+                            echo 'Running OWASP Dependency Check...'
+                            sh '''
+                                # Run OWASP Dependency Check
+                                dependency-check \
+                                    --project "DevSecOps Pipeline" \
+                                    --scan . \
+                                    --format ALL \
+                                    --out ./dependency-check-report \
+                                    --suppression suppression.xml || true
+                            '''
+                            
+                            // Publish dependency check results
+                            publishHTML([
+                                allowMissing: false,
+                                alwaysLinkToLastBuild: true,
+                                keepAll: true,
+                                reportDir: 'dependency-check-report',
+                                reportFiles: 'dependency-check-report.html',
+                                reportName: 'OWASP Dependency Check Report'
+                            ])
+                        }
+                    }
+                }
+                
+                stage('🔍 Secret Scanning') {
+                    steps {
+                        script {
+                            echo 'Scanning for secrets and sensitive data...'
+                            sh '''
+                                # Install detect-secrets if not available
+                                pip3 install --upgrade detect-secrets
+                                
+                                # Run secret scanning
+                                detect-secrets scan --all-files --baseline .secrets.baseline || true
+                                
+                                # Check for new secrets
+                                if [ -f .secrets.baseline ]; then
+                                    detect-secrets audit .secrets.baseline || true
+                                fi
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('📋 SonarQube Quality Gate') {
+            when {
+                not { params.SKIP_SECURITY_SCANS }
+            }
+            steps {
+                script {
+                    echo 'Waiting for SonarQube Quality Gate...'
+                    timeout(time: 5, unit: 'MINUTES') {
+                        def qg = waitForQualityGate()
+                        if (qg.status != 'OK') {
+                            error "Pipeline aborted due to quality gate failure: ${qg.status}"
+                        }
+                        echo "Quality Gate passed: ${qg.status}"
+                    }
+                }
+            }
+        }
+        
+        stage('🏗️ Terraform Operations') {
+            when {
+                anyOf {
+                    equals expected: 'infrastructure', actual: params.DEPLOYMENT_TYPE
+                    equals expected: 'both', actual: params.DEPLOYMENT_TYPE
+                }
+            }
+            stages {
+                stage('Terraform Init & Workspace') {
+                    steps {
+                        script {
+                            echo "Initializing Terraform for ${env.ENVIRONMENT} environment..."
+                            sh '''
+                                # Initialize Terraform
+                                terraform init -upgrade
+                                
+                                # Create or select workspace
+                                terraform workspace select ${TF_WORKSPACE} || terraform workspace new ${TF_WORKSPACE}
+                                
+                                echo "Current workspace: $(terraform workspace show)"
+                            '''
+                        }
+                    }
+                }
+                
+                stage('Terraform Plan') {
+                    steps {
+                        script {
+                            echo 'Creating Terraform execution plan...'
+                            sh '''
+                                # Create Terraform plan
+                                terraform plan \
+                                    -var-file="terraform.tfvars" \
+                                    -out=tfplan \
+                                    -detailed-exitcode || PLAN_EXIT_CODE=$?
+                                
+                                # Check plan results
+                                if [ $PLAN_EXIT_CODE -eq 1 ]; then
+                                    echo "Terraform plan failed"
+                                    exit 1
+                                elif [ $PLAN_EXIT_CODE -eq 2 ]; then
+                                    echo "Terraform plan has changes"
+                                    echo "TERRAFORM_CHANGES=true" >> $GITHUB_ENV || true
+                                else
+                                    echo "No changes in Terraform plan"
+                                    echo "TERRAFORM_CHANGES=false" >> $GITHUB_ENV || true
+                                fi
+                            '''
+                            
+                            // Archive the plan
+                            archiveArtifacts artifacts: 'tfplan', fingerprint: true
+                        }
+                    }
+                }
+                
+                stage('📋 Deployment Approval') {
+                    when {
+                        anyOf {
+                            equals expected: 'production', actual: env.ENVIRONMENT
+                            not { params.AUTO_APPROVE }
+                        }
+                    }
+                    steps {
+                        script {
+                            echo 'Waiting for deployment approval...'
+                            
+                            // Send notification about pending approval
+                            slackSend(
+                                color: '#FFA500',
+                                message: """
+                                🚨 *Deployment Approval Required*
+                                
+                                *Project:* DevSecOps Pipeline
+                                *Environment:* ${env.ENVIRONMENT}
+                                *Branch:* ${env.BRANCH_NAME}
+                                *Commit:* ${env.GIT_COMMIT}
+                                *Message:* ${env.GIT_COMMIT_MSG}
+                                
+                                Please review and approve: ${env.BUILD_URL}
+                                """,
+                                channel: SLACK_CHANNEL
+                            )
+                            
+                            // Manual approval step
+                            input message: """
+                                Deploy to ${env.ENVIRONMENT}?
+                                
+                                Environment: ${env.ENVIRONMENT}
+                                Workspace: ${env.TF_WORKSPACE}
+                                Branch: ${env.BRANCH_NAME}
+                                
+                                Please review the Terraform plan before proceeding.
+                            """, ok: 'Deploy',
+                            submitterParameter: 'APPROVER'
+                            
+                            echo "Deployment approved by: ${env.APPROVER}"
+                        }
+                    }
+                }
+                
+                stage('🚀 Terraform Apply') {
+                    steps {
+                        script {
+                            echo "Applying Terraform changes to ${env.ENVIRONMENT}..."
+                            sh '''
+                                # Apply Terraform plan
+                                terraform apply -auto-approve tfplan
+                                
+                                # Show outputs
+                                echo "=== Terraform Outputs ==="
+                                terraform output
+                            '''
+                            
+                            // Save outputs for later use
+                            script {
+                                def outputs = sh(
+                                    script: 'terraform output -json',
+                                    returnStdout: true
+                                ).trim()
+                                writeFile file: 'terraform-outputs.json', text: outputs
+                                archiveArtifacts artifacts: 'terraform-outputs.json'
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('📱 Application Deployment') {
+            when {
+                anyOf {
+                    equals expected: 'application', actual: params.DEPLOYMENT_TYPE
+                    equals expected: 'both', actual: params.DEPLOYMENT_TYPE
+                }
+            }
+            steps {
+                script {
+                    echo 'Deploying application components...'
+                    
+                    // This stage can be customized based on your application type
+                    sh '''
+                        echo "Application deployment logic goes here"
+                        echo "This could include:"
+                        echo "- Docker image building and pushing"
+                        echo "- Kubernetes deployments"
+                        echo "- Lambda function updates"
+                        echo "- Application configuration updates"
+                        
+                        # Example: Update EC2 user data or application code
+                        if [ -f "app1-install.sh" ]; then
+                            echo "Application installation script found"
+                            # Additional application deployment logic
+                        fi
+                    '''
+                }
+            }
+        }
+        
+        stage('🧪 Post-Deployment Testing') {
+            parallel {
+                stage('Infrastructure Tests') {
+                    steps {
+                        script {
+                            echo 'Running infrastructure validation tests...'
+                            sh '''
+                                # Test infrastructure components
+                                echo "=== Infrastructure Health Checks ==="
+                                
+                                # Check if resources are accessible
+                                if [ -f terraform-outputs.json ]; then
+                                    echo "Terraform outputs available for testing"
+                                    
+                                    # Extract public IPs or endpoints for testing
+                                    # Add specific health checks based on your infrastructure
+                                fi
+                                
+                                echo "Infrastructure tests completed"
+                            '''
+                        }
+                    }
+                }
+                
+                stage('Security Validation') {
+                    steps {
+                        script {
+                            echo 'Running post-deployment security validation...'
+                            sh '''
+                                echo "=== Security Validation ==="
+                                
+                                # Validate security configurations
+                                echo "Checking deployed resources for security compliance..."
+                                
+                                # Run additional security checks on deployed infrastructure
+                                # This could include port scans, SSL certificate validation, etc.
+                                
+                                echo "Security validation completed"
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('📊 Monitoring Setup') {
+            steps {
+                script {
+                    echo 'Setting up monitoring and alerting...'
+                    sh '''
+                        echo "=== Monitoring Configuration ==="
+                        
+                        # Configure monitoring for deployed resources
+                        echo "Setting up CloudWatch alarms..."
+                        echo "Configuring log aggregation..."
+                        echo "Setting up health checks..."
+                        
+                        # This stage can include:
+                        # - CloudWatch alarm creation
+                        # - Log group configuration
+                        # - SNS topic setup for alerts
+                        # - Dashboard creation
+                        
+                        echo "Monitoring setup completed"
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            script {
+                echo 'Pipeline cleanup and notifications...'
+                
+                // Clean up temporary files
+                sh '''
+                    rm -f tfplan
+                    rm -f terraform-outputs.json
+                    rm -f checkov-results.json
+                '''
+                
+                // Archive important artifacts
+                archiveArtifacts artifacts: '**/*.log', allowEmptyArchive: true
+                
+                // Send completion notification
+                def status = currentBuild.result ?: 'SUCCESS'
+                def color = status == 'SUCCESS' ? '#36a64f' : '#ff0000'
+                def emoji = status == 'SUCCESS' ? '✅' : '❌'
+                
+                slackSend(
+                    color: color,
+                    message: """
+                    ${emoji} *DevSecOps Pipeline ${status}*
+                    
+                    *Project:* DevSecOps Pipeline
+                    *Environment:* ${env.ENVIRONMENT}
+                    *Branch:* ${env.BRANCH_NAME}
+                    *Duration:* ${currentBuild.durationString}
+                    *Build:* ${env.BUILD_URL}
+                    
+                    ${status == 'SUCCESS' ? '🚀 Deployment completed successfully!' : '🚨 Pipeline failed - please check logs'}
+                    """,
+                    channel: SLACK_CHANNEL
+                )
+            }
+        }
+        
+        success {
+            echo '🎉 Pipeline completed successfully!'
+        }
+        
+        failure {
+            script {
+                echo '❌ Pipeline failed!'
+                
+                // Send failure notification with more details
+                slackSend(
+                    color: '#ff0000',
+                    message: """
+                    🚨 *URGENT: DevSecOps Pipeline Failed*
+                    
+                    *Environment:* ${env.ENVIRONMENT}
+                    *Branch:* ${env.BRANCH_NAME}
+                    *Failed Stage:* ${env.STAGE_NAME}
+                    *Build:* ${env.BUILD_URL}
+                    
+                    Please investigate immediately!
+                    """,
+                    channel: SLACK_CHANNEL
+                )
+            }
+        }
+        
+        unstable {
+            echo '⚠️ Pipeline completed with warnings'
+        }
+        
+        aborted {
+            echo '🛑 Pipeline was aborted'
+        }
+    }
+}

@@ -1,5 +1,5 @@
 provider "aws" {
   alias   = "secondary"
-  region  = "us-west-2"
+  region  = "eu-west-1"
   profile = var.aws_profile
 }

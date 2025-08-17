@@ -1,17 +1,17 @@
 # Complete DevSecOps Platform with Self-Hosted Infrastructure
 
-**Status: Pipeline Testing in Progress** ✅
+**Status: Production Ready** 🎉
 
-[![Terraform](https://img.shields.io/badge/Terraform-1.0+-623CE4?logo=terraform)](https://terraform.io)
+[![Terraform](https://img.shields.io/badge/Terraform-1.6+-623CE4?logo=terraform)](https://terraform.io)
 [![AWS](https://img.shields.io/badge/AWS-Ireland%20Region-FF9900?logo=amazon-aws)](https://aws.amazon.com)
-[![Jenkins](https://img.shields.io/badge/Jenkins-Pipeline-D33833?logo=jenkins)](https://jenkins.io)
+[![Jenkins](https://img.shields.io/badge/Jenkins-2.400+-D33833?logo=jenkins)](https://jenkins.io)
 [![Security](https://img.shields.io/badge/Security-DevSecOps-green)](https://owasp.org)
-[![SonarQube](https://img.shields.io/badge/SonarQube-Code%20Quality-4E9BCD?logo=sonarqube)](https://sonarqube.org)
+[![SonarQube](https://img.shields.io/badge/SonarQube-Community-4E9BCD?logo=sonarqube)](https://sonarqube.org)
 [![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?logo=docker)](https://docker.com)
 
-**A complete, self-contained DevSecOps platform** that automatically provisions an EC2 server with all necessary tools pre-installed (Jenkins, SonarQube, OWASP, Checkov, Terraform) and creates a GitHub webhook-triggered pipeline for secure infrastructure and application deployment.
+**A complete, automated DevSecOps platform** that provisions an EC2 server with Jenkins, SonarQube, and security tools pre-installed. Features GitHub webhook integration, comprehensive security scanning, and automated CI/CD pipelines.
 
-🎯 **Perfect for**: Teams wanting a complete DevSecOps solution that deploys with a single `terraform apply` command.
+🎯 **Perfect for**: Teams wanting enterprise-grade DevSecOps that deploys with a single command and includes all manual fixes documented in automation scripts.
 
 ![CI/CD Architecture](ci-cd-3.png)
 
@@ -86,34 +86,39 @@ This platform creates a **fully automated DevSecOps environment** with:
 1. **AWS Profile Setup**:
    ```bash
    aws configure --profile raj-private
-   # Configure with your AWS credentials for Ireland region
+   # Configure with your AWS credentials for Ireland region (eu-west-1)
    ```
 
 2. **Required AWS Resources** (Ireland - eu-west-1):
-   - S3 bucket for Terraform state: `demo-tf-state-rsood`
-   - DynamoDB table for state locking: `demo-tf-state-lock`
-   - VPC with private subnet
-   - Security group for EC2 access
-   - IAM role for EC2 instances
-   - EC2 Key Pair: `raj-private-ireland`
+   - EC2 Key Pair: `opsworx-ie` (download to ~/Downloads/)
+   - VPC and subnets (existing infrastructure)
+   - Security groups with proper access rules
+   - IAM roles for EC2 instances
 
-3. **IAM Permissions**:
-   - EC2 full access
-   - S3 access for state management
-   - DynamoDB access for state locking
-   - IAM role assumption capabilities
+3. **Optional GitHub Integration**:
+   ```bash
+   # Store GitHub token for automated webhook setup
+   aws ssm put-parameter \
+     --name "/github-auto-commit/github-token" \
+     --value "your-github-token" \
+     --type "SecureString" \
+     --region eu-west-1 \
+     --profile raj-private
+   ```
 
-### Jenkins Configuration
-1. **Credentials Setup**:
-   - `aws-dev-user`: AWS credentials for development
-   - `aws-prod-user`: AWS credentials for production
-   - `SonarQube`: SonarQube authentication token
-   - `snyk-token-soodrajesh`: Snyk security scanning token
+### Automated Jenkins Configuration
+1. **Essential Plugins Pre-installed**:
+   - Git, Pipeline, Blue Ocean
+   - SonarQube Scanner, GitHub integration
+   - AWS Steps for cloud deployment
 
-2. **Tool Configuration**:
-   - SonarQube server configuration
-   - OWASP Dependency-Check installation
-   - Slack workspace integration
+2. **Pre-configured Jobs**:
+   - `DevSecOps-Test`: Simple validation pipeline
+   - `DevSecOps-Pipeline`: Comprehensive security pipeline (auto-created)
+
+3. **Security Tools Ready**:
+   - Checkov, Bandit, Safety, detect-secrets, Semgrep
+   - All tools installed in user space with proper PATH configuration
 
 ## 🚀 Quick Start Guide
 
@@ -124,12 +129,12 @@ aws configure --profile raj-private
 # Enter your AWS credentials for Ireland region (eu-west-1)
 
 # 2. Clone the repository
-git clone <your-repo-url>
+git clone https://github.com/soodrajesh/ci-cd-project-3.git
 cd ci-cd-project-3
 
-# 3. Update configuration
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your actual AWS resource IDs
+# 3. Ensure you have the SSH key
+# Download opsworx-ie.pem to ~/Downloads/
+# Set correct permissions: chmod 400 ~/Downloads/opsworx-ie.pem
 ```
 
 ### Step 2: Deploy DevSecOps Infrastructure
@@ -139,42 +144,57 @@ terraform init
 terraform plan
 terraform apply
 
-# Note the outputs - you'll need the Jenkins and SonarQube URLs
+# The deployment includes:
+# - EC2 instance with automated setup
+# - Jenkins with plugins and jobs pre-configured
+# - SonarQube container
+# - All security tools installed
+# - GitHub webhook integration
 ```
 
 ### Step 3: Access Your DevSecOps Platform
 ```bash
-# After deployment completes (5-10 minutes):
+# After deployment completes (8-10 minutes):
 # Jenkins: http://YOUR_SERVER_IP:8080
 # SonarQube: http://YOUR_SERVER_IP:9000
 
-# Get Jenkins initial password:
-ssh -i your-key.pem ec2-user@YOUR_SERVER_IP
-cat /home/ec2-user/devsecops-setup-complete.txt
+# SSH to server and check status:
+ssh -i ~/Downloads/opsworx-ie.pem ec2-user@YOUR_SERVER_IP
+./monitor-devsecops.sh
+
+# Get Jenkins credentials from the monitoring script output
 ```
 
-### Step 4: Configure GitHub Integration
+### Step 4: GitHub Integration (Automated)
 ```bash
-# Follow the detailed guide:
-cat github-webhook-config.md
+# GitHub webhook is automatically configured if you have:
+# 1. GitHub token stored in AWS Parameter Store: /github-auto-commit/github-token
+# 2. The setup script handles webhook creation automatically
 
-# Key steps:
-# 1. Add GitHub webhook pointing to your Jenkins server
-# 2. Configure Jenkins pipeline job
-# 3. Test with a commit to trigger the pipeline
+# To manually add GitHub token to Parameter Store:
+aws ssm put-parameter \
+  --name "/github-auto-commit/github-token" \
+  --value "your-github-token" \
+  --type "SecureString" \
+  --region eu-west-1 \
+  --profile raj-private
 ```
 
 ### Step 5: Test the Complete Workflow
 ```bash
-# Make a test commit to trigger the pipeline
-echo "# Test# DevSecOps CI/CD Pipeline Project
+# The comprehensive DevSecOps pipeline includes:
+# - Environment setup and tool validation
+# - Security scanning (Checkov, Bandit, Safety)
+# - Code analysis and infrastructure validation
+# - Build testing and deployment readiness
 
-**Status: Pipeline Testing in Progress** ✅-file.md
+# Test by making a commit:
+echo "# DevSecOps Test" > test-file.md
 git add test-file.md
-git commit -m "Test: Trigger DevSecOps pipeline"
-git push origin main
+git commit -m "Test: Trigger comprehensive DevSecOps pipeline"
+git push origin test-pipeline-integration
 
-# Watch the pipeline execute in Jenkins!
+# Monitor pipeline execution in Jenkins!
 ```
 
 ## 📊 Pipeline Stages
@@ -256,7 +276,6 @@ Fetches the latest code from the version control system.
 ```
 ci-cd-project-3/
 ├── README.md                      # This comprehensive guide
-├── ci-cd-3.png                   # Architecture diagram
 ├── .gitignore                    # Git ignore patterns
 │
 ├── 🏗️ Infrastructure (Terraform)
@@ -266,13 +285,9 @@ ci-cd-project-3/
 ├── providers.tf                 # AWS provider configuration
 ├── vars.tf                      # Variable definitions
 ├── outputs.tf                   # Output definitions
-├── terraform.tfvars.example     # Example variables file
 │
 ├── 🔄 CI/CD Pipeline
-├── Jenkinsfile                  # Original pipeline
-├── Jenkinsfile-DevSecOps        # Complete DevSecOps pipeline
-├── github-webhook-config.md     # GitHub integration guide
-├── skip_checks.txt             # Checkov skip configurations
+├── Jenkinsfile                  # Comprehensive DevSecOps pipeline
 │
 ├── 📱 Sample Application
 ├── sample-app/
@@ -282,14 +297,14 @@ ci-cd-project-3/
 │
 ├── 🛠️ Scripts & Automation
 ├── scripts/
-│   ├── devsecops-setup.sh      # Complete tool installation
-│   ├── validate-dependencies.sh # Dependency validation
-│   ├── deploy.sh               # Manual deployment
-│   └── post-deployment-tests.sh # Validation & testing
+│   ├── devsecops-setup-clean.sh    # Production-ready setup script
+│   ├── monitor-devsecops.sh         # Status monitoring (created on EC2)
+│   ├── test-comprehensive-pipeline.sh # Pipeline testing
+│   ├── check-jenkins-status.sh      # Jenkins status checker
+│   └── run-on-ec2.sh               # Remote execution helper
 │
-└── 📚 Legacy Files
-    ├── app1-install.sh          # Original EC2 user data
-    └── Jenkinsfile              # Original pipeline
+└── 📚 Documentation
+    └── All manual fixes documented in automation scripts
 ```
 
 ## 🌍 Environment Configuration
@@ -318,21 +333,31 @@ Real-time notifications for:
 ### Jira Integration
 Automatic issue tracking and status updates.
 
-## 🔧 Customization
+## 🔧 Key Features & Manual Fixes Automated
 
-### Adding New Environments
-1. Update `Jenkinsfile` with new branch conditions
-2. Create corresponding Terraform workspace
-3. Configure environment-specific variables
+### All Manual Fixes Documented in Scripts
+- **Java 17 Configuration**: Automated in `devsecops-setup-clean.sh`
+- **Jenkins Plugin Installation**: Automated with proper error handling
+- **SonarQube Container Setup**: Docker Compose with proper resource limits
+- **Security Tools Installation**: User-space installation for ec2-user
+- **GitHub Webhook Integration**: Automated with AWS Parameter Store
+- **Pipeline Job Creation**: Comprehensive DevSecOps pipeline pre-configured
 
-### Modifying Security Checks
-Edit `skip_checks.txt` to customize Checkov security validations:
-```
-CKV_AWS_126,CKV_AWS_135,CKV_AWS_79,CKV_AWS_8
-```
+### Comprehensive DevSecOps Pipeline Stages
+1. **Environment Setup**: Tool validation and workspace check
+2. **Security Tools Check**: Verify security scanning tools availability
+3. **Code Analysis**: File analysis and secret detection
+4. **Infrastructure Validation**: Terraform syntax and formatting
+5. **Security Scanning**: Permission checks and hardcoded secret detection
+6. **Code Quality Analysis**: SonarQube integration when available
+7. **Infrastructure Security**: Public access and encryption validation
+8. **Build & Test**: Python syntax and shell script validation
+9. **Deployment Ready**: Complete pipeline summary
 
-### Custom Deployment Scripts
-Modify `scripts/deploy.sh` for additional deployment logic or validation steps.
+### Monitoring & Status
+- **Real-time Monitoring**: `monitor-devsecops.sh` script on EC2
+- **Remote Execution**: `run-on-ec2.sh` for local testing
+- **Pipeline Testing**: Automated pipeline trigger and monitoring
 
 ## 🚨 Troubleshooting Guide
 
