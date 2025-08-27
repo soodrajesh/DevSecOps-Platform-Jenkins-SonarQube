@@ -105,7 +105,6 @@ This platform creates a **fully automated DevSecOps environment** with:
      --region eu-west-1 \
      --profile raj-private
    ```
-
 ### Automated Jenkins Configuration
 1. **Essential Plugins Pre-installed**:
    - Git, Pipeline, Blue Ocean
