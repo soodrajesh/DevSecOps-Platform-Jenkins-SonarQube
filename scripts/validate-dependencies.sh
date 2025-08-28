@@ -40,12 +40,12 @@ if command_exists aws; then
     # Check AWS profile
     echo "Validating AWS profile 'raj-private'..."
     if aws configure list-profiles | grep -q "raj-private"; then
-        echo "✓ AWS profile 'raj-private' found"
+        echo "[OK] AWS profile 'raj-private' found"
         
         # Test AWS credentials
         echo "Testing AWS credentials..."
         aws sts get-caller-identity --profile raj-private
-        echo "✓ AWS credentials validated"
+        echo "[OK] AWS credentials validated"
     else
         echo "ERROR: AWS profile 'raj-private' not found"
         echo "Available profiles:"
@@ -89,7 +89,7 @@ fi
 
 # Check if we're in a Git repository
 if [ -d ".git" ]; then
-    echo "✓ Running in a Git repository"
+    echo "[OK] Running in a Git repository"
 else
     echo "WARNING: Not in a Git repository"
 fi
@@ -97,10 +97,10 @@ fi
 # Validate Terraform configuration
 echo "Validating Terraform configuration..."
 if [ -f "main.tf" ]; then
-    echo "✓ main.tf found"
+    echo "[OK] main.tf found"
     terraform fmt -check=true -diff=true
     terraform validate
-    echo "✓ Terraform configuration is valid"
+    echo "[OK] Terraform configuration is valid"
 else
     echo "ERROR: main.tf not found"
     exit 1
@@ -110,7 +110,7 @@ fi
 REQUIRED_FILES=("backend.tf" "vars.tf" "providers.tf" "app1-install.sh")
 for file in "${REQUIRED_FILES[@]}"; do
     if [ -f "$file" ]; then
-        echo "✓ $file found"
+        echo "[OK] $file found"
     else
         echo "ERROR: Required file $file not found"
         exit 1

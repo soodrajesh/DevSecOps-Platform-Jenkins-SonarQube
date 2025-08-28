@@ -52,12 +52,12 @@ Access Jenkins at `http://YOUR_SERVER_IP:8080` and install these plugins:
 ### 2.2 Configure Job Settings
 
 **General Tab:**
-- ✅ GitHub project: `https://github.com/YOUR_USERNAME/YOUR_REPO`
-- ✅ This project is parameterized (add parameters from Jenkinsfile)
+- [x] GitHub project: `https://github.com/YOUR_USERNAME/YOUR_REPO`
+- [x] This project is parameterized (add parameters from Jenkinsfile)
 
 **Build Triggers:**
-- ✅ GitHub hook trigger for GITScm polling
-- ✅ Generic Webhook Trigger (optional for more control)
+- [x] GitHub hook trigger for GITScm polling
+- [x] Generic Webhook Trigger (optional for more control)
 
 **Pipeline:**
 - **Definition**: Pipeline script from SCM
@@ -96,19 +96,19 @@ your-webhook-secret-here
 ```
 
 **Which events would you like to trigger this webhook?**
-- ✅ Just the push event
+- [x] Just the push event
 - Or select **Let me select individual events:**
-  - ✅ Pushes
-  - ✅ Pull requests
-  - ✅ Pull request reviews
+  - [x] Pushes
+  - [x] Pull requests
+  - [x] Pull request reviews
 
-**Active:** ✅ Checked
+**Active:** [x] Checked
 
 ### 3.3 Test Webhook
 
 1. Click **Add webhook**
 2. GitHub will send a test payload
-3. Check the **Recent Deliveries** tab for successful delivery (green checkmark)
+3. Check the **Recent Deliveries** tab for successful delivery
 
 ## Step 4: Security Configuration
 

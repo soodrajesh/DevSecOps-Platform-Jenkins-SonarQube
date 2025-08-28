@@ -10,13 +10,13 @@ echo "Checking DevSecOps setup status..."
 # Check if setup is complete
 ssh -i $SSH_KEY -o StrictHostKeyChecking=no ec2-user@$SERVER_IP "
 if [ -f /home/ec2-user/devsecops-setup-complete.txt ]; then
-    echo '✅ Setup completed!'
+    echo '[OK] Setup completed!'
     cat /home/ec2-user/devsecops-setup-complete.txt
     echo ''
-    echo '🔍 Running service validation...'
+    echo '[INFO] Running service validation...'
     /home/ec2-user/monitor-services.sh
 else
-    echo '⏳ Setup still in progress...'
+    echo '[INFO] Setup still in progress...'
     echo 'Latest setup log entries:'
     tail -10 /var/log/devsecops-setup.log 2>/dev/null || echo 'Log not available yet'
 fi

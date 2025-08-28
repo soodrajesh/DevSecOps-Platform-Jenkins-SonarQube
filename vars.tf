@@ -46,8 +46,20 @@ variable "ec2-role" {
   default     = ""  # Will use the created IAM instance profile
 }
 
+variable "environment" {
+  description = "Environment name (e.g., dev, staging, prod)"
+  type        = string
+  default     = "dev"
+}
+
+variable "vpc_name" {
+  description = "Name of the existing VPC to deploy into"
+  type        = string
+  default     = "devopslab"
+}
+
 # Note: Using existing VPC and subnets from devopslab VPC
-# No VPC variables needed as we're using data sources
+# Default VPC name is 'devopslab' - override if different
 
 # DevSecOps Server Variables
 variable "devsecops_instance_type" {

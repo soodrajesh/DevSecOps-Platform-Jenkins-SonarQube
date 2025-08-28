@@ -11,11 +11,11 @@ AWS_REGION="eu-west-1"
 KEY_PATH="$HOME/Downloads/opsworx-ie.pem"  # Using the correct AWS key pair
 EC2_USER="ec2-user"
 
-echo "🚀 Running DevSecOps Pipeline Tests on EC2..."
+echo "Running DevSecOps Pipeline Tests on EC2..."
 
 # Function to get EC2 instance IP
 get_ec2_instance_ip() {
-    echo "🔍 Finding DevSecOps EC2 instance..."
+    echo "Finding DevSecOps EC2 instance..."
     
     local instance_ip=$(aws ec2 describe-instances \
         --profile "$AWS_PROFILE" \
@@ -26,11 +26,11 @@ get_ec2_instance_ip() {
         --output text)
     
     if [ "$instance_ip" = "None" ] || [ "$instance_ip" = "null" ] || [ -z "$instance_ip" ]; then
-        echo "❌ No running DevSecOps EC2 instance found"
+        echo "No running DevSecOps EC2 instance found"
         return 1
     fi
     
-    echo "✅ Found EC2 instance: $instance_ip"
+    echo "Found EC2 instance: $instance_ip"
     echo "$instance_ip"
 }
 
@@ -38,15 +38,15 @@ get_ec2_instance_ip() {
 check_ssh_connection() {
     local instance_ip=$1
     
-    echo "🔐 Testing SSH connection to $instance_ip..."
+    echo "Testing SSH connection to $instance_ip..."
     
     if ssh -i "$KEY_PATH" -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
            "$EC2_USER@$instance_ip" "echo 'SSH connection successful'"; then
-        echo "✅ SSH connection established"
+        echo "SSH connection established"
         return 0
     else
-        echo "❌ SSH connection failed"
-        echo "💡 Make sure:"
+        echo "SSH connection failed"
+        echo "Make sure:"
         echo "   - SSH key path is correct: $KEY_PATH"
         echo "   - Security group allows SSH (port 22)"
         echo "   - Instance is running and accessible"
@@ -58,7 +58,7 @@ check_ssh_connection() {
 upload_scripts() {
     local instance_ip=$1
     
-    echo "📤 Uploading scripts to EC2 instance..."
+    echo "Uploading scripts to EC2 instance..."
     
     # Create remote directory
     ssh -i "$KEY_PATH" "$EC2_USER@$instance_ip" "mkdir -p ~/ci-cd-project-3/scripts"
@@ -73,46 +73,46 @@ upload_scripts() {
     ssh -i "$KEY_PATH" "$EC2_USER@$instance_ip" \
         "chmod +x ~/ci-cd-project-3/scripts/*.sh"
     
-    echo "✅ Scripts uploaded successfully"
+    echo "Scripts uploaded successfully"
 }
 
 # Function to run Jenkins status check on EC2
 run_jenkins_status_check() {
     local instance_ip=$1
     
-    echo "🔍 Running Jenkins status check on EC2..."
+    echo "Running Jenkins status check on EC2..."
     
     ssh -i "$KEY_PATH" "$EC2_USER@$instance_ip" << 'EOF'
         echo "=== Jenkins Status Check on EC2 ==="
         
         # Check Jenkins service
-        echo "🔧 Jenkins service status:"
+        echo "Jenkins service status:"
         sudo systemctl status jenkins --no-pager -l || echo "Jenkins service check failed"
         echo ""
         
         # Check Jenkins web interface
-        echo "🌐 Jenkins web interface:"
+        echo "Jenkins web interface:"
         curl -s -I http://localhost:8080/login | head -1 || echo "Jenkins web interface not accessible"
         echo ""
         
         # Check SonarQube
-        echo "🔍 SonarQube status:"
+        echo "SonarQube status:"
         curl -s http://localhost:9000/api/system/status || echo "SonarQube not accessible"
         echo ""
         
         # Check Docker containers
-        echo "🐳 Docker containers:"
+        echo "Docker containers:"
         docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || echo "Docker not accessible"
         echo ""
         
         # Check system resources
-        echo "💻 System resources:"
+        echo "System resources:"
         echo "CPU: $(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1)%"
         echo "Memory: $(free -h | awk '/^Mem:/ {print $3 "/" $2}')"
         echo "Disk: $(df -h / | awk 'NR==2 {print $3 "/" $2 " (" $5 " used)"}')"
         echo ""
         
-        echo "✅ Status check completed on EC2"
+        echo "Status check completed on EC2"
 EOF
 }
 
@@ -120,7 +120,7 @@ EOF
 run_comprehensive_pipeline_test() {
     local instance_ip=$1
     
-    echo "🧪 Running comprehensive pipeline test on EC2..."
+    echo "Running comprehensive pipeline test on EC2..."
     
     ssh -i "$KEY_PATH" "$EC2_USER@$instance_ip" << 'EOF'
         echo "=== Comprehensive DevSecOps Pipeline Test ==="
@@ -129,23 +129,23 @@ run_comprehensive_pipeline_test() {
         
         # Run the comprehensive pipeline test
         if [ -f "test-comprehensive-pipeline.sh" ]; then
-            echo "🚀 Executing comprehensive pipeline test..."
+            echo "Executing comprehensive pipeline test..."
             ./test-comprehensive-pipeline.sh
         else
-            echo "❌ test-comprehensive-pipeline.sh not found"
+            echo "test-comprehensive-pipeline.sh not found"
             
             # Manual pipeline trigger as fallback
-            echo "🔄 Attempting manual pipeline trigger..."
+            echo "Attempting manual pipeline trigger..."
             
             JENKINS_URL="http://localhost:8080"
             JENKINS_USER="admin"
             
             if [ -f /var/lib/jenkins/secrets/initialAdminPassword ]; then
                 JENKINS_PASSWORD=$(sudo cat /var/lib/jenkins/secrets/initialAdminPassword)
-                echo "✅ Retrieved Jenkins password"
+                echo "Retrieved Jenkins password"
                 
                 # List existing jobs
-                echo "📋 Existing Jenkins jobs:"
+                echo "Existing Jenkins jobs:"
                 curl -s -u "$JENKINS_USER:$JENKINS_PASSWORD" \
                     "$JENKINS_URL/api/json?tree=jobs[name,color]" | \
                     python3 -c "
@@ -159,17 +159,17 @@ except:
 "
                 
                 # Try to trigger DevSecOps-Pipeline
-                echo "🔨 Triggering DevSecOps-Pipeline..."
+                echo "Triggering DevSecOps-Pipeline..."
                 curl -s -X POST -u "$JENKINS_USER:$JENKINS_PASSWORD" \
                     "$JENKINS_URL/job/DevSecOps-Pipeline/build" && \
-                    echo "✅ Pipeline triggered" || echo "❌ Pipeline trigger failed"
+                    echo "Pipeline triggered" || echo "Pipeline trigger failed"
                 
             else
-                echo "❌ Jenkins password not accessible"
+                echo "Jenkins password not accessible"
             fi
         fi
         
-        echo "✅ Pipeline test completed on EC2"
+        echo "Pipeline test completed on EC2"
 EOF
 }
 
@@ -177,7 +177,7 @@ EOF
 check_pipeline_results() {
     local instance_ip=$1
     
-    echo "📊 Checking pipeline results on EC2..."
+    echo "Checking pipeline results on EC2..."
     
     ssh -i "$KEY_PATH" "$EC2_USER@$instance_ip" << 'EOF'
         echo "=== Pipeline Results Check ==="
@@ -189,7 +189,7 @@ check_pipeline_results() {
             JENKINS_PASSWORD=$(sudo cat /var/lib/jenkins/secrets/initialAdminPassword)
             
             # Get latest build info for DevSecOps-Pipeline
-            echo "📈 Latest DevSecOps-Pipeline build:"
+            echo "Latest DevSecOps-Pipeline build:"
             curl -s -u "$JENKINS_USER:$JENKINS_PASSWORD" \
                 "$JENKINS_URL/job/DevSecOps-Pipeline/api/json?tree=lastBuild[number,result,timestamp,duration]" | \
                 python3 -c "
@@ -225,16 +225,16 @@ except Exception as e:
 "
             
             echo ""
-            echo "📋 Recent console output (last 30 lines):"
+            echo "Recent console output (last 30 lines):"
             curl -s -u "$JENKINS_USER:$JENKINS_PASSWORD" \
                 "$JENKINS_URL/job/DevSecOps-Pipeline/lastBuild/consoleText" | tail -30
                 
         else
-            echo "❌ Cannot access Jenkins credentials"
+            echo "Cannot access Jenkins credentials"
         fi
         
         echo ""
-        echo "✅ Results check completed"
+        echo "Results check completed"
 EOF
 }
 
@@ -275,23 +275,23 @@ main() {
     check_pipeline_results "$instance_ip"
     echo ""
     
-    echo "🎉 DevSecOps pipeline execution on EC2 completed!"
-    echo "🌐 Jenkins URL: http://$instance_ip:8080"
-    echo "🔍 SonarQube URL: http://$instance_ip:9000"
+    echo "DevSecOps pipeline execution on EC2 completed!"
+    echo "Jenkins URL: http://$instance_ip:8080"
+    echo "SonarQube URL: http://$instance_ip:9000"
     echo ""
-    echo "💡 To access Jenkins directly:"
+    echo "To access Jenkins directly:"
     echo "   ssh -i $KEY_PATH $EC2_USER@$instance_ip"
 }
 
 # Check prerequisites
 if ! command -v aws &> /dev/null; then
-    echo "❌ AWS CLI not found. Please install AWS CLI."
+    echo "AWS CLI not found. Please install AWS CLI."
     exit 1
 fi
 
 if [ ! -f "$KEY_PATH" ]; then
-    echo "❌ SSH key not found at $KEY_PATH"
-    echo "💡 Please update KEY_PATH variable or ensure SSH key exists"
+    echo "SSH key not found at $KEY_PATH"
+    echo "Please update KEY_PATH variable or ensure SSH key exists"
     exit 1
 fi
 
