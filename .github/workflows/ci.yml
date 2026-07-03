@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform fmt/validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6.0"
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive
+
+      # No AWS credentials in CI: -backend=false skips the local backend
+      # (this repo commits terraform.tfstate for a single-host POC), and
+      # validate itself never touches state or talks to AWS.
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck on all shell scripts
+        run: |
+          set -euo pipefail
+          files=$(find . -type f -name "*.sh" -not -path "./.git/*")
+          echo "$files"
+          # Fail only on real errors. This repo's scripts have pre-existing
+          # style/info-level shellcheck warnings (SC2155, SC2034, etc.) that
+          # are cosmetic, not bugs - not fixing those here (out of scope).
+          echo "$files" | xargs shellcheck --severity=error
+
+  checkov:
+    name: Checkov (soft-fail)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      # --soft-fail: this repo documents its accepted tradeoffs for a
+      # single-host POC (open security group, wildcard IAM policy,
+      # committed tfstate) in the README's Known Gaps section. This job
+      # reports findings without blocking CI.
+      # --framework terraform: scope the scan to the Terraform IaC (what
+      # this repo actually documents scanning); the secrets/sast frameworks
+      # in current Checkov releases require Bridgecrew platform credentials
+      # we don't have here and would crash rather than soft-fail.
+      - name: Run Checkov
+        run: checkov -d . --framework terraform --compact --quiet --soft-fail

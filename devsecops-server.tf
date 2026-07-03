@@ -150,9 +150,9 @@ resource "aws_instance" "devsecops_server" {
   key_name               = var.key-pair
   iam_instance_profile   = aws_iam_instance_profile.devsecops_profile.name
   vpc_security_group_ids = [aws_security_group.devsecops_sg.id]
-  
+
   user_data = file("${path.module}/scripts/devsecops-setup.sh")
-  
+
   root_block_device {
     volume_size           = 30
     volume_type           = "gp3"
@@ -161,8 +161,8 @@ resource "aws_instance" "devsecops_server" {
   }
 
   metadata_options {
-    http_endpoint = "enabled"
-    http_tokens   = "required"
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
     http_put_response_hop_limit = 1
   }
 
