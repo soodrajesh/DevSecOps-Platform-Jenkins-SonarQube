@@ -107,7 +107,7 @@ else
 fi
 
 # Check required files
-REQUIRED_FILES=("backend.tf" "vars.tf" "providers.tf" "app1-install.sh")
+REQUIRED_FILES=("backend.tf" "vars.tf" "providers.tf" "devsecops-server.tf")
 for file in "${REQUIRED_FILES[@]}"; do
     if [ -f "$file" ]; then
         echo "✓ $file found"

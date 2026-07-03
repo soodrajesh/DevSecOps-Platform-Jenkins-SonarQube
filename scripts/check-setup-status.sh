@@ -14,7 +14,7 @@ if [ -f /home/ec2-user/devsecops-setup-complete.txt ]; then
     cat /home/ec2-user/devsecops-setup-complete.txt
     echo ''
     echo '🔍 Running service validation...'
-    /home/ec2-user/monitor-services.sh
+    /home/ec2-user/monitor-devsecops.sh
 else
     echo '⏳ Setup still in progress...'
     echo 'Latest setup log entries:'

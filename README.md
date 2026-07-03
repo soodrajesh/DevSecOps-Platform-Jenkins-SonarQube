@@ -1,549 +1,129 @@
-# Complete DevSecOps Platform with Self-Hosted Infrastructure
+# DevSecOps Platform: Jenkins + SonarQube on a single EC2 host
 
-**Status: Production Ready** 🎉
+Terraform stands up one EC2 instance in an existing AWS VPC, and a user-data script turns it into a Jenkins + SonarQube box with a handful of security scanners installed alongside. Two Jenkinsfiles live in the repo: a small one that just validates the codebase (Terraform fmt/validate, Python syntax, some grep-based checks), and a longer one that models a fuller pipeline with SonarQube quality gates, Checkov, OWASP Dependency-Check, and Slack notifications.
 
-[![Terraform](https://img.shields.io/badge/Terraform-1.6+-623CE4?logo=terraform)](https://terraform.io)
-[![AWS](https://img.shields.io/badge/AWS-Ireland%20Region-FF9900?logo=amazon-aws)](https://aws.amazon.com)
-[![Jenkins](https://img.shields.io/badge/Jenkins-2.400+-D33833?logo=jenkins)](https://jenkins.io)
-[![Security](https://img.shields.io/badge/Security-DevSecOps-green)](https://owasp.org)
-[![SonarQube](https://img.shields.io/badge/SonarQube-Community-4E9BCD?logo=sonarqube)](https://sonarqube.org)
-[![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?logo=docker)](https://docker.com)
+This started as a basic Terraform CI/CD lab (deploying a demo Apache app) and was repurposed into a DevSecOps toolchain demo. Some of that history is still visible in the code — an old app deployment script, a couple of stale repo-name references — and I've called those out below instead of pretending they aren't there.
 
-**A complete, automated DevSecOps platform** that provisions an EC2 server with Jenkins, SonarQube, and security tools pre-installed. Features GitHub webhook integration, comprehensive security scanning, and automated CI/CD pipelines.
+## What it actually does
 
-🎯 **Perfect for**: Teams wanting enterprise-grade DevSecOps that deploys with a single command and includes all manual fixes documented in automation scripts.
+`terraform apply` creates:
 
-![CI/CD Architecture](ci-cd-3.png)
+- A security group allowing inbound 22, 80, 443, 8080 (Jenkins), and 9000 (SonarQube) from `0.0.0.0/0`.
+- An IAM role/instance profile attached to the instance with a policy that grants `*` on EC2, S3, IAM, Lambda, CloudFormation, logs, CloudWatch, SNS, SQS, DynamoDB, RDS, ELB, ASG, Route53, ACM, Secrets Manager, SSM, and STS.
+- One EC2 instance (`t3.micro` by default) in an existing VPC/subnet looked up by tag (`devopslab` / `public-subnet-0`), with an encrypted gp3 root volume and IMDSv2 enforced.
+- An Elastic IP attached to that instance.
 
-## 🏗️ Complete DevSecOps Architecture
+The instance's user-data script (`scripts/devsecops-setup.sh`) does the rest: installs Java 17, Jenkins, Docker, Docker Compose, Python 3, Node.js, Terraform, and the AWS CLI; installs Checkov, Bandit, Safety, detect-secrets, Semgrep, and Snyk into the `ec2-user` home directory; brings up SonarQube Community Edition via Docker Compose; installs a small set of Jenkins plugins over the HTTP API; and creates one starter pipeline job (`DevSecOps-Test`). It also drops a `monitor-devsecops.sh` script on the box that prints service status and both admin passwords in plaintext.
 
-This platform creates a **fully automated DevSecOps environment** with:
+GitHub webhook registration is handled by a background script that sleeps 3 minutes, pulls a GitHub token out of SSM Parameter Store (`/github-auto-commit/github-token`), and calls the GitHub API to register a webhook pointed at the instance's public IP over plain HTTP (`insecure_ssl: "1"`, because there's no TLS in front of Jenkins).
 
-### 🖥️ **Self-Hosted DevSecOps Server**
-- **Automated EC2 Provisioning**: Single-command deployment of complete toolchain
-- **Pre-installed Tools**: Jenkins, SonarQube, OWASP, Checkov, Terraform, Docker
-- **Auto-configuration**: All tools configured and ready to use
-- **Persistent Storage**: EBS volumes with encryption for data persistence
+## Architecture
 
-### 🔄 **Automated CI/CD Workflow**
-- **GitHub Integration**: Webhook-triggered pipelines on code commits
-- **Multi-Environment**: Automatic dev/prod environment selection based on branches
-- **Security-First**: Integrated security scanning at every pipeline stage
-- **Infrastructure as Code**: Complete infrastructure deployment via Terraform
+```mermaid
+flowchart TB
+    dev[Developer push] -->|git push| gh[GitHub repo]
+    gh -->|webhook, registered via SSM token| jenkins
 
-### 🛡️ **Comprehensive Security Scanning**
-- **Static Code Analysis**: SonarQube integration with quality gates
-- **Infrastructure Security**: Checkov for IaC security validation
-- **Dependency Scanning**: OWASP Dependency Check for vulnerabilities
-- **Secret Detection**: Automated secret scanning and validation
+    subgraph ec2["EC2 instance (t3.micro, single host)"]
+        jenkins[Jenkins]
+        sonar[SonarQube Community\nDocker container, H2 in-memory DB]
+        tools[Checkov / Bandit / Safety\ndetect-secrets / Semgrep / Snyk]
+        jenkins -->|sonar-scanner| sonar
+        jenkins --> tools
+    end
 
-### 📊 **Monitoring & Notifications**
-- **Real-time Alerts**: Slack integration for build status
-- **Health Monitoring**: Automated post-deployment validation
-- **Performance Testing**: Basic performance validation
-- **Security Compliance**: Continuous security posture monitoring
-
-## 🚀 Key Features
-
-### 🎯 **One-Command Deployment**
-- ✅ **Complete Infrastructure**: Single `terraform apply` deploys entire DevSecOps platform
-- ✅ **Auto-Configuration**: All tools pre-configured and integrated
-- ✅ **Ready-to-Use**: Access Jenkins and SonarQube immediately after deployment
-
-### 🔒 **Enterprise Security**
-- ✅ **Multi-Layer Security Scanning**: SonarQube + Checkov + OWASP + Secret Detection
-- ✅ **Encrypted Storage**: All EBS volumes encrypted at rest
-- ✅ **Security Groups**: Properly configured network access controls
-- ✅ **IMDSv2 Enforcement**: Secure instance metadata access
-
-### 🌍 **Production-Ready**
-- ✅ **Ireland Region (eu-west-1)**: GDPR-compliant EU deployment
-- ✅ **High Availability**: Elastic IP and proper backup strategies
-- ✅ **Monitoring**: Comprehensive health checks and alerting
-- ✅ **Scalable**: Designed for team collaboration
-
-### 🔄 **Developer Experience**
-- ✅ **GitHub Integration**: Automatic pipeline triggers on commits
-- ✅ **Branch-Based Deployment**: Dev/prod environments based on Git branches
-- ✅ **Visual Pipeline**: Blue Ocean interface for better UX
-- ✅ **Sample Application**: Ready-to-deploy Flask app for testing
-
-## 📋 Prerequisites
-
-### Required Tools
-- **Jenkins** (v2.400+) with required plugins:
-  - Pipeline Plugin
-  - AWS Steps Plugin
-  - SonarQube Scanner Plugin
-  - OWASP Dependency-Check Plugin
-  - Slack Notification Plugin
-- **Terraform** (v1.0+)
-- **AWS CLI** (v2.0+)
-- **Python 3** with pip
-- **Git**
-
-### AWS Configuration
-1. **AWS Profile Setup**:
-   ```bash
-   aws configure --profile raj-private
-   # Configure with your AWS credentials for Ireland region (eu-west-1)
-   ```
-
-2. **Required AWS Resources** (Ireland - eu-west-1):
-   - EC2 Key Pair: `opsworx-ie` (download to ~/Downloads/)
-   - VPC and subnets (existing infrastructure)
-   - Security groups with proper access rules
-   - IAM roles for EC2 instances
-
-3. **Optional GitHub Integration**:
-   ```bash
-   # Store GitHub token for automated webhook setup
-   aws ssm put-parameter \
-     --name "/github-auto-commit/github-token" \
-     --value "your-github-token" \
-     --type "SecureString" \
-     --region eu-west-1 \
-     --profile raj-private
-   ```
-
-### Automated Jenkins Configuration
-1. **Essential Plugins Pre-installed**:
-   - Git, Pipeline, Blue Ocean
-   - SonarQube Scanner, GitHub integration
-   - AWS Steps for cloud deployment
-
-2. **Pre-configured Jobs**:
-   - `DevSecOps-Test`: Simple validation pipeline
-   - `DevSecOps-Pipeline`: Comprehensive security pipeline (auto-created)
-
-3. **Security Tools Ready**:
-   - Checkov, Bandit, Safety, detect-secrets, Semgrep
-   - All tools installed in user space with proper PATH configuration
-
-## 🚀 Quick Start Guide
-
-### Step 1: Prerequisites Setup
-```bash
-# 1. Configure AWS CLI with raj-private profile
-aws configure --profile raj-private
-# Enter your AWS credentials for Ireland region (eu-west-1)
-
-# 2. Clone the repository
-git clone https://github.com/soodrajesh/ci-cd-project-3.git
-cd ci-cd-project-3
-
-# 3. Ensure you have the SSH key
-# Download opsworx-ie.pem to ~/Downloads/
-# Set correct permissions: chmod 400 ~/Downloads/opsworx-ie.pem
+    tf[Terraform: main.tf, vpc.tf,\ndevsecops-server.tf] -->|provisions| ec2
+    vpc[(Existing VPC/subnet\nlooked up by tag)] --> ec2
+    jenkins -->|terraform plan/apply| aws[(AWS account\nvia IAM instance role)]
+    jenkins -.->|slackSend, in Jenkinsfile-DevSecOps only| slack[Slack]
 ```
 
-### Step 2: Deploy DevSecOps Infrastructure
+Everything - Jenkins, SonarQube, and the scanning tools - runs on one host, which is the whole point: it's cheap and there's nothing to wire together beyond the user-data script. The tradeoff is that Jenkins and SonarQube compete for the same 1-2 vCPUs, SonarQube's data lives in an in-memory H2 database (the docker-compose file sets `SONAR_JDBC_URL: jdbc:h2:mem:sonar`), so a container restart loses all analysis history, and there's no separation between the build agent and the controller.
+
+Compared to a managed alternative like SonarCloud or GitHub Advanced Security, this setup exists because it doesn't depend on a SaaS scanning quota or a GitHub Enterprise license, and everything - Jenkins config, SonarQube analysis, scanner versions - stays inside one box you fully control. You'd choose SonarCloud/CodeGuru instead if you wanted the scanning results to outlive a single EC2 instance, wanted proper RBAC and audit logging, or didn't want to own patching and backups for the scanning stack yourself.
+
+## Known gaps
+
+- **State is committed to the repo.** `terraform.tfstate` and `terraform.tfstate.backup` are tracked in git. `backend.tf` has a commented-out S3 backend (pointed at a `us-west-2` bucket, which doesn't match the `eu-west-1` region used everywhere else) but local state is what's actually in use. No locking, no encryption at rest for state, and anyone with repo access can see resource IDs and IPs.
+- **The IAM policy attached to the instance is `*` on everything** listed above. That's far broader than what the setup script or either Jenkinsfile actually needs.
+- **Security group is open to `0.0.0.0/0`** on SSH, Jenkins, and SonarQube. Fine for a personal lab, not something to point at a shared network.
+- **No TLS.** Jenkins and SonarQube are both served over plain HTTP, and the webhook setup explicitly disables SSL verification (`insecure_ssl: "1"`) because of it.
+- **Jenkins and SonarQube admin credentials aren't rotated or stored anywhere secure.** `monitor-devsecops.sh` prints the Jenkins initial admin password and the default SonarQube `admin/admin` login straight to the terminal.
+- **`Jenkinsfile-DevSecOps` assumes plugins and credentials that the setup script never installs.** It uses `withSonarQubeEnv`, `waitForQualityGate()`, the OWASP `dependencyCheck` step, `slackSend`, and a `github-repo-url` credential - none of which are configured by `devsecops-setup.sh`. You have to wire those up by hand in the Jenkins UI before that pipeline will run past the first stage.
+- **`github_webhook_secret` and `sonarqube_admin_password` are declared in `vars.tf` but never consumed anywhere.** They read like configurable settings; they aren't plumbed into any resource or script.
+- **Single point of failure, no HA.** One instance, no auto-recovery, no backups of Jenkins home or SonarQube data beyond what's on the root volume.
+- **The sample Flask app isn't deployed by anything.** `sample-app/` gets a Python syntax check in the simple `Jenkinsfile` (`python3 -m py_compile app.py`) and that's it - there's no step that builds the Docker image, pushes it anywhere, or runs it.
+- **Manual GitHub token setup.** The webhook automation only works if you've manually put a GitHub PAT into SSM Parameter Store first; there's no Terraform resource or script that does that for you.
+- **Left over from an earlier version of this repo:** the README and a couple of scripts (`Jenkinsfile`'s `SONARQUBE_PROJECT_KEY`, `scripts/devsecops-setup.sh`'s `GITHUB_REPO`, `scripts/run-on-ec2.sh`) still reference the project's old name, `ci-cd-project-3`. They don't break anything functionally, but they're stale.
+
+## Project structure
+
+```
+.
+├── main.tf                       # Default AWS provider config
+├── vpc.tf                        # Data sources: existing VPC + subnets, looked up by tag
+├── devsecops-server.tf           # Security group, IAM role/policy, EC2 instance, EIP
+├── providers.tf                  # Secondary aliased provider (unused elsewhere)
+├── backend.tf                    # Local state; S3 backend commented out
+├── vars.tf                       # Variable definitions and defaults
+├── outputs.tf                    # Workspace output
+├── terraform.tfvars              # Actual values used for the last apply (committed)
+├── terraform.tfvars.example      # Template for the above
+├── skip_checks.txt               # Checkov checks skipped by the pipeline
+├── Jenkinsfile                   # Validation-only pipeline (fmt/validate, syntax checks)
+├── Jenkinsfile-DevSecOps         # Fuller pipeline: SonarQube, Checkov, OWASP, Slack, approval gate
+├── github-webhook-config.md      # Manual steps for wiring up the GitHub webhook in Jenkins
+├── sample-app/
+│   ├── app.py                    # Flask demo app (health check, metrics, security headers)
+│   ├── requirements.txt
+│   └── Dockerfile
+└── scripts/
+    ├── devsecops-setup.sh        # EC2 user-data: installs and configures everything
+    ├── deploy.sh                 # Local wrapper around terraform init/plan/apply + Checkov
+    ├── validate-dependencies.sh  # Checks local tooling (terraform, aws cli, python) before deploy
+    ├── check-jenkins-status.sh   # Run on the instance: Jenkins/SonarQube/Docker health
+    ├── check-setup-status.sh     # Run locally over SSH: polls the instance for setup completion
+    ├── run-on-ec2.sh             # Uploads and runs the status/test scripts on the instance over SSH
+    └── test-comprehensive-pipeline.sh  # Triggers DevSecOps-Pipeline via the Jenkins API and tails the result
+```
+
+## How to run this
+
+You need an AWS account with an existing VPC tagged `Name=devopslab` and a subnet tagged `Name=public-subnet-0` (see `vpc.tf`), an EC2 key pair, and the AWS CLI configured with a profile (defaults to `raj-private` in `vars.tf` - override it in `terraform.tfvars`).
+
 ```bash
-# Deploy complete DevSecOps platform
+git clone https://github.com/soodrajesh/DevSecOps-Platform-Jenkins-SonarQube.git
+cd DevSecOps-Platform-Jenkins-SonarQube
+
+cp terraform.tfvars.example terraform.tfvars
+# edit terraform.tfvars: aws_profile, key-pair, region, etc.
+
 terraform init
 terraform plan
 terraform apply
-
-# The deployment includes:
-# - EC2 instance with automated setup
-# - Jenkins with plugins and jobs pre-configured
-# - SonarQube container
-# - All security tools installed
-# - GitHub webhook integration
 ```
 
-### Step 3: Access Your DevSecOps Platform
-```bash
-# After deployment completes (8-10 minutes):
-# Jenkins: http://YOUR_SERVER_IP:8080
-# SonarQube: http://YOUR_SERVER_IP:9000
-
-# SSH to server and check status:
-ssh -i ~/Downloads/opsworx-ie.pem ec2-user@YOUR_SERVER_IP
-./monitor-devsecops.sh
-
-# Get Jenkins credentials from the monitoring script output
-```
-
-### Step 4: GitHub Integration (Automated)
-```bash
-# GitHub webhook is automatically configured if you have:
-# 1. GitHub token stored in AWS Parameter Store: /github-auto-commit/github-token
-# 2. The setup script handles webhook creation automatically
-
-# To manually add GitHub token to Parameter Store:
-aws ssm put-parameter \
-  --name "/github-auto-commit/github-token" \
-  --value "your-github-token" \
-  --type "SecureString" \
-  --region eu-west-1 \
-  --profile raj-private
-```
-
-### Step 5: Test the Complete Workflow
-```bash
-# The comprehensive DevSecOps pipeline includes:
-# - Environment setup and tool validation
-# - Security scanning (Checkov, Bandit, Safety)
-# - Code analysis and infrastructure validation
-# - Build testing and deployment readiness
-
-# Test by making a commit:
-echo "# DevSecOps Test" > test-file.md
-git add test-file.md
-git commit -m "Test: Trigger comprehensive DevSecOps pipeline"
-git push origin test-pipeline-integration
-
-# Monitor pipeline execution in Jenkins!
-```
-
-## 📊 Pipeline Stages
-
-### 1. **Checkout** 📥
-Fetches the latest code from the version control system.
-
-### 2. **Dependency Validation** ✅
-- Validates Terraform installation and version
-- Checks AWS CLI and profile configuration
-- Verifies Python and pip availability
-- Tests AWS credentials and permissions
-
-### 3. **Security Tools Installation** 🔧
-- Installs Checkov for infrastructure security scanning
-- Verifies tool installations and versions
-
-### 4. **Terraform Initialization** 🏗️
-- Initializes Terraform with remote backend
-- Handles state migration prompts automatically
-
-### 5. **Workspace Management** 🔄
-- Selects appropriate workspace based on Git branch
-- Creates new workspaces if they don't exist
-- Development: `develop` branch → `development` workspace
-- Production: `main` branch → `production` workspace
-
-### 6. **OWASP Dependency Check** 🛡️
-- Scans for known vulnerabilities in dependencies
-- Generates comprehensive security reports
-- Publishes results for review
-
-### 7. **SonarQube Analysis** 📊
-- Performs static code analysis on Terraform files
-- Checks code quality and security issues
-- Integrates with SonarQube dashboard
-
-### 8. **Checkov Security Scan** 🔍
-- Infrastructure as Code security scanning
-- Validates against CIS benchmarks
-- Configurable security checks via `skip_checks.txt`
-
-### 9. **Terraform Plan** 📋
-- Generates execution plan for infrastructure changes
-- Validates configuration and dependencies
-- Outputs plan for manual review
-
-### 10. **Manual Approval** ⏸️
-- Requires manual approval before applying changes
-- Provides opportunity to review planned changes
-- Production safety gate
-
-### 11. **Terraform Apply** 🚀
-- Applies approved infrastructure changes
-- Uses appropriate AWS credentials per environment
-- Sends success notifications to Slack
-
-## 🔒 Security Features
-
-### Infrastructure Security
-- **Encrypted EBS volumes**: All storage encrypted at rest
-- **IMDSv2 enforcement**: Secure instance metadata access
-- **VPC security groups**: Network-level access controls
-- **IAM roles**: Least privilege access principles
-
-### Pipeline Security
-- **Credential management**: Secure Jenkins credential storage
-- **Multi-stage scanning**: Security checks at every stage
-- **Approval gates**: Manual verification for production
-- **Audit logging**: Complete deployment audit trail
-
-### Compliance
-- **GDPR compliant**: Ireland region deployment
-- **CIS benchmarks**: Infrastructure security standards
-- **OWASP guidelines**: Application security best practices
-
-## 📁 Complete Project Structure
-
-```
-ci-cd-project-3/
-├── README.md                      # This comprehensive guide
-├── .gitignore                    # Git ignore patterns
-│
-├── 🏗️ Infrastructure (Terraform)
-├── main.tf                       # Application infrastructure
-├── devsecops-server.tf          # DevSecOps server with all tools
-├── backend.tf                   # Terraform backend configuration
-├── providers.tf                 # AWS provider configuration
-├── vars.tf                      # Variable definitions
-├── outputs.tf                   # Output definitions
-│
-├── 🔄 CI/CD Pipeline
-├── Jenkinsfile                  # Comprehensive DevSecOps pipeline
-│
-├── 📱 Sample Application
-├── sample-app/
-│   ├── app.py                   # Flask web application
-│   ├── requirements.txt         # Python dependencies
-│   └── Dockerfile              # Container configuration
-│
-├── 🛠️ Scripts & Automation
-├── scripts/
-│   ├── devsecops-setup-clean.sh    # Production-ready setup script
-│   ├── monitor-devsecops.sh         # Status monitoring (created on EC2)
-│   ├── test-comprehensive-pipeline.sh # Pipeline testing
-│   ├── check-jenkins-status.sh      # Jenkins status checker
-│   └── run-on-ec2.sh               # Remote execution helper
-│
-└── 📚 Documentation
-    └── All manual fixes documented in automation scripts
-```
-
-## 🌍 Environment Configuration
-
-### Development Environment
-- **Branch**: `develop`
-- **Workspace**: `development`
-- **AWS Region**: `eu-west-1`
-- **Instance Tags**: `Environment=development`
-
-### Production Environment
-- **Branch**: `main`
-- **Workspace**: `production`
-- **AWS Region**: `eu-west-1`
-- **Instance Tags**: `Environment=production`
-
-## 📈 Monitoring & Notifications
-
-### Slack Integration
-Real-time notifications for:
-- ✅ Successful deployments
-- ❌ Failed builds
-- ⚠️ Unstable builds
-- 🛑 Aborted builds
-
-### Jira Integration
-Automatic issue tracking and status updates.
-
-## 🔧 Key Features & Manual Fixes Automated
-
-### All Manual Fixes Documented in Scripts
-- **Java 17 Configuration**: Automated in `devsecops-setup-clean.sh`
-- **Jenkins Plugin Installation**: Automated with proper error handling
-- **SonarQube Container Setup**: Docker Compose with proper resource limits
-- **Security Tools Installation**: User-space installation for ec2-user
-- **GitHub Webhook Integration**: Automated with AWS Parameter Store
-- **Pipeline Job Creation**: Comprehensive DevSecOps pipeline pre-configured
-
-### Comprehensive DevSecOps Pipeline Stages
-1. **Environment Setup**: Tool validation and workspace check
-2. **Security Tools Check**: Verify security scanning tools availability
-3. **Code Analysis**: File analysis and secret detection
-4. **Infrastructure Validation**: Terraform syntax and formatting
-5. **Security Scanning**: Permission checks and hardcoded secret detection
-6. **Code Quality Analysis**: SonarQube integration when available
-7. **Infrastructure Security**: Public access and encryption validation
-8. **Build & Test**: Python syntax and shell script validation
-9. **Deployment Ready**: Complete pipeline summary
-
-### Monitoring & Status
-- **Real-time Monitoring**: `monitor-devsecops.sh` script on EC2
-- **Remote Execution**: `run-on-ec2.sh` for local testing
-- **Pipeline Testing**: Automated pipeline trigger and monitoring
-
-## 🚨 Troubleshooting Guide
-
-### Infrastructure Deployment Issues
-
-**1. AWS Profile Configuration**
-```bash
-# Configure AWS profile
-aws configure --profile raj-private
-# Test configuration
-aws sts get-caller-identity --profile raj-private
-```
-
-**2. Terraform State Issues**
-```bash
-# Unlock state if locked
-terraform force-unlock <LOCK_ID>
-
-# Refresh state
-terraform refresh
-
-# Import existing resources if needed
-terraform import aws_instance.example i-1234567890abcdef0
-```
-
-**3. Missing AWS Resources**
-```bash
-# Create VPC and subnets if needed
-aws ec2 describe-vpcs --profile raj-private --region eu-west-1
-aws ec2 describe-subnets --profile raj-private --region eu-west-1
-
-# Update terraform.tfvars with actual resource IDs
-```
-
-### DevSecOps Server Issues
-
-**1. Server Not Accessible**
-```bash
-# Check security group rules
-aws ec2 describe-security-groups --group-ids sg-xxxxx --profile raj-private
-
-# Verify instance is running
-aws ec2 describe-instances --instance-ids i-xxxxx --profile raj-private
-
-# Check system status
-aws ec2 describe-instance-status --instance-ids i-xxxxx --profile raj-private
-```
-
-**2. Jenkins Not Starting**
-```bash
-# SSH to server and check logs
-ssh -i your-key.pem ec2-user@YOUR_SERVER_IP
-sudo systemctl status jenkins
-sudo journalctl -u jenkins -f
-
-# Restart Jenkins
-sudo systemctl restart jenkins
-```
-
-**3. SonarQube Issues**
-```bash
-# Check Docker containers
-docker ps -a
-docker logs sonarqube
-
-# Restart SonarQube
-cd /opt/sonarqube
-sudo docker-compose restart
-```
-
-### Pipeline Issues
-
-**1. GitHub Webhook Not Triggering**
-```bash
-# Check webhook deliveries in GitHub
-# Repository → Settings → Webhooks → Recent Deliveries
-
-# Test webhook manually
-curl -X POST http://YOUR_SERVER_IP:8080/github-webhook/ \
-  -H "Content-Type: application/json" \
-  -d '{"ref":"refs/heads/main"}'
-```
-
-**2. Pipeline Failures**
-```bash
-# Check Jenkins build logs
-# Navigate to failed build → Console Output
-
-# Run validation script manually
-./scripts/validate-dependencies.sh
-
-# Test individual pipeline stages
-./scripts/post-deployment-tests.sh
-```
-
-### Useful Diagnostic Commands
+Deployment takes 5-10 minutes end to end (instance boot plus the user-data script). Once it's done:
 
 ```bash
-# Complete system status check
-ssh -i your-key.pem ec2-user@YOUR_SERVER_IP
-./monitor-services.sh
+terraform output    # public IP, Jenkins/SonarQube URLs, ssh command
 
-# Validate all configurations
-./scripts/validate-dependencies.sh
-
-# Test infrastructure
-./scripts/post-deployment-tests.sh
-
-# Check Terraform state
-terraform show
-terraform output
+ssh -i <your-key>.pem ec2-user@<public-ip>
+./monitor-devsecops.sh    # prints service status and both admin passwords
 ```
 
-### Emergency Recovery
+Jenkins is at `http://<public-ip>:8080`, SonarQube at `http://<public-ip>:9000`. From there, GitHub webhook setup (if you want push-triggered builds) is manual - either let the delayed script in `devsecops-setup.sh` pick up a token from SSM Parameter Store, or follow `github-webhook-config.md` and do it by hand in the GitHub UI.
 
-**Complete Infrastructure Reset:**
+To validate the Terraform and pipeline code locally without touching AWS:
+
 ```bash
-# Destroy and recreate (CAUTION: This will delete everything)
+./scripts/validate-dependencies.sh   # checks terraform/aws-cli/python are installed and configured
+terraform fmt -check -diff
+terraform validate
+```
+
+To tear everything down:
+
+```bash
 terraform destroy
-terraform apply
-
-# Or just recreate the DevSecOps server
-terraform destroy -target=aws_instance.devsecops_server
-terraform apply -target=aws_instance.devsecops_server
 ```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run validation scripts
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🏷️ Tags
-
-`DevSecOps` `Jenkins` `SonarQube` `Terraform` `AWS` `CI/CD` `Infrastructure-as-Code` `Security-Scanning` `OWASP` `Checkov` `Docker` `GitHub-Webhooks` `Automation` `Ireland` `GDPR-Compliant` `Self-Hosted` `Complete-Platform`
-
----
-
-## 🎯 What You Get
-
-After running `terraform apply`, you'll have:
-
-### 🖥️ **Complete DevSecOps Server**
-- **Jenkins**: `http://YOUR_SERVER_IP:8080` (with all plugins pre-installed)
-- **SonarQube**: `http://YOUR_SERVER_IP:9000` (ready for code analysis)
-- **All Security Tools**: Checkov, OWASP, Snyk, Secret Detection
-- **Development Tools**: Terraform, AWS CLI, Docker, Python
-
-### 🔄 **Automated Pipeline**
-- **GitHub Integration**: Webhook triggers on every commit
-- **Multi-Environment**: Automatic dev/prod deployment based on branches
-- **Security Gates**: Comprehensive security scanning before deployment
-- **Approval Workflow**: Manual approval for production deployments
-
-### 📱 **Sample Application**
-- **Flask Web App**: Ready-to-deploy sample application
-- **Docker Support**: Containerized deployment option
-- **Health Checks**: Built-in monitoring endpoints
-- **Security Headers**: Production-ready security configuration
-
-### 📊 **Monitoring & Reporting**
-- **Real-time Notifications**: Slack integration for build status
-- **Test Reports**: Automated post-deployment validation
-- **Security Reports**: Comprehensive security scan results
-- **Performance Metrics**: Basic performance monitoring
-
----
-
-## 🏆 Success Metrics
-
-**Deployment Time**: ~10 minutes from `terraform apply` to fully functional DevSecOps platform
-
-**Security Coverage**: 4 layers of security scanning (Static Analysis, IaC Security, Dependency Check, Secret Detection)
-
-**Automation Level**: 100% automated from code commit to production deployment
-
-**Team Productivity**: Developers can focus on code while security and deployment are handled automatically
-
----
-
-**🚀 Built for teams who want enterprise-grade DevSecOps without the complexity**
-
-*Deploy once, develop forever!*
