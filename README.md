@@ -1,5 +1,7 @@
 # DevSecOps Platform: Jenkins + SonarQube on a single EC2 host
 
+[![CI](https://github.com/soodrajesh/DevSecOps-Platform-Jenkins-SonarQube/actions/workflows/ci.yml/badge.svg)](https://github.com/soodrajesh/DevSecOps-Platform-Jenkins-SonarQube/actions/workflows/ci.yml)
+
 Terraform stands up one EC2 instance in an existing AWS VPC, and a user-data script turns it into a Jenkins + SonarQube box with a handful of security scanners installed alongside. Two Jenkinsfiles live in the repo: a small one that just validates the codebase (Terraform fmt/validate, Python syntax, some grep-based checks), and a longer one that models a fuller pipeline with SonarQube quality gates, Checkov, OWASP Dependency-Check, and Slack notifications.
 
 This started as a basic Terraform CI/CD lab (deploying a demo Apache app) and was repurposed into a DevSecOps toolchain demo. Some of that history is still visible in the code — an old app deployment script, a couple of stale repo-name references — and I've called those out below instead of pretending they aren't there.
@@ -55,11 +57,13 @@ Compared to a managed alternative like SonarCloud or GitHub Advanced Security, t
 - **The sample Flask app isn't deployed by anything.** `sample-app/` gets a Python syntax check in the simple `Jenkinsfile` (`python3 -m py_compile app.py`) and that's it - there's no step that builds the Docker image, pushes it anywhere, or runs it.
 - **Manual GitHub token setup.** The webhook automation only works if you've manually put a GitHub PAT into SSM Parameter Store first; there's no Terraform resource or script that does that for you.
 - **Left over from an earlier version of this repo:** the README and a couple of scripts (`Jenkinsfile`'s `SONARQUBE_PROJECT_KEY`, `scripts/devsecops-setup.sh`'s `GITHUB_REPO`, `scripts/run-on-ec2.sh`) still reference the project's old name, `ci-cd-project-3`. They don't break anything functionally, but they're stale.
+- **GitHub Actions CI only lints and validates, it doesn't deploy anything.** `.github/workflows/ci.yml` runs on every push/PR to `main` with three jobs, none of which need AWS credentials: `terraform fmt -check` + `terraform init -backend=false` + `terraform validate` (validate doesn't touch state or AWS, so the committed `terraform.tfstate` doesn't interfere); `shellcheck` (at `--severity=error`, so it catches real script bugs, not the pre-existing style/info-level warnings this repo carries) against every `.sh` file; and a soft-failing `checkov` scan (`--framework terraform`, since Checkov's secrets/SAST frameworks need Bridgecrew platform credentials this repo doesn't have) that reports the same open-security-group/wildcard-IAM findings called out above without blocking the build. It never runs `terraform apply`, never provisions the EC2 instance, and doesn't exercise `sample-app/` or the Jenkinsfiles.
 
 ## Project structure
 
 ```
 .
+├── .github/workflows/ci.yml      # GitHub Actions: terraform validate, shellcheck, checkov (soft-fail)
 ├── main.tf                       # Default AWS provider config
 ├── vpc.tf                        # Data sources: existing VPC + subnets, looked up by tag
 ├── devsecops-server.tf           # Security group, IAM role/policy, EC2 instance, EIP
