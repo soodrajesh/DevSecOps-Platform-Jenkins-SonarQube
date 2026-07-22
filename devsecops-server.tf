@@ -1,23 +1,5 @@
-/**
- * DevSecOps Server - EC2 Instance Configuration
- * 
- * This module creates an EC2 instance pre-configured with a complete DevSecOps toolchain:
- * - Jenkins CI/CD Server
- * - SonarQube for static code analysis
- * - Security scanning tools (OWASP ZAP, Bandit, Checkov, etc.)
- * - Docker and Docker Compose for containerization
- * - AWS CLI and Terraform for infrastructure as code
- * 
- * Security Features:
- * - Configurable CIDR blocks for all ingress rules
- * - IAM instance profile with least privilege permissions
- * - Encrypted EBS root volume
- * - IMDSv2 required for instance metadata access
- * - Security group with minimum required ports open
- * 
- * Note: Default security group rules are permissive for demo purposes.
- *       Restrict access in production using the allowed_*_cidr variables.
- */
+# DevSecOps Server - EC2 instance with all tools pre-installed
+# This creates a complete DevSecOps environment with Jenkins, SonarQube, OWASP, etc.
 
 resource "aws_security_group" "devsecops_sg" {
   name_prefix = "devsecops-server-${terraform.workspace}"
@@ -29,9 +11,8 @@ resource "aws_security_group" "devsecops_sg" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    # WARNING: For demo purposes, SSH is open to the world. Restrict to your IP for production!
-    cidr_blocks = [var.allowed_ssh_cidr]
-    description = "SSH access (restrict in production)"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "SSH access"
   }
 
   # Jenkins
@@ -39,9 +20,8 @@ resource "aws_security_group" "devsecops_sg" {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    # WARNING: Jenkins UI is open to the world for demo. Restrict to trusted IPs in production!
-    cidr_blocks = [var.allowed_jenkins_cidr]
-    description = "Jenkins web interface (restrict in production)"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Jenkins web interface"
   }
 
   # SonarQube
@@ -49,9 +29,8 @@ resource "aws_security_group" "devsecops_sg" {
     from_port   = 9000
     to_port     = 9000
     protocol    = "tcp"
-    # WARNING: SonarQube UI is open to the world for demo. Restrict to trusted IPs in production!
-    cidr_blocks = [var.allowed_sonarqube_cidr]
-    description = "SonarQube web interface (restrict in production)"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "SonarQube web interface"
   }
 
   # HTTPS
@@ -59,9 +38,8 @@ resource "aws_security_group" "devsecops_sg" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    # WARNING: HTTPS is open to the world for demo. Restrict to trusted IPs in production!
-    cidr_blocks = [var.allowed_https_cidr]
-    description = "HTTPS access (restrict in production)"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTPS access"
   }
 
   # HTTP
@@ -69,9 +47,8 @@ resource "aws_security_group" "devsecops_sg" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    # WARNING: HTTP is open to the world for demo. Restrict to trusted IPs in production!
-    cidr_blocks = [var.allowed_http_cidr]
-    description = "HTTP access (restrict in production)"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTP access"
   }
 
   # All outbound traffic
@@ -126,56 +103,27 @@ resource "aws_iam_role_policy" "devsecops_policy" {
     Statement = [
       {
         Effect = "Allow"
-        # EC2 instance management for Jenkins agents and pipeline automation
         Action = [
-          "ec2:DescribeInstances",
-          "ec2:DescribeImages",
-          "ec2:DescribeSecurityGroups",
-          "ec2:DescribeSubnets",
-          "ec2:DescribeVpcs",
-          "ec2:AssociateAddress",
-          "ec2:DisassociateAddress"
+          "ec2:*",
+          "s3:*",
+          "iam:*",
+          "lambda:*",
+          "cloudformation:*",
+          "logs:*",
+          "cloudwatch:*",
+          "sns:*",
+          "sqs:*",
+          "dynamodb:*",
+          "rds:*",
+          "elasticloadbalancing:*",
+          "autoscaling:*",
+          "route53:*",
+          "acm:*",
+          "secretsmanager:*",
+          "ssm:*",
+          "sts:*"
         ]
         Resource = "*"
-
-        # S3 for artifact storage
-        Action = [
-          "s3:ListBucket",
-          "s3:GetObject",
-          "s3:PutObject"
-        ]
-        Resource = "*"
-
-        # IAM PassRole for Jenkins and automation (least privilege)
-        Action = [
-          "iam:PassRole"
-        ]
-        Resource = "arn:aws:iam::*:role/devsecops-*"
-
-        # Lambda, CloudFormation, and other pipeline automation (read-only)
-        Action = [
-          "lambda:ListFunctions",
-          "cloudformation:DescribeStacks"
-        ]
-        Resource = "*"
-
-        # CloudWatch and Logs for monitoring
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents",
-          "cloudwatch:PutMetricData"
-        ]
-        Resource = "*"
-
-        # SSM and Secrets Manager for secure secret retrieval
-        Action = [
-          "ssm:GetParameter",
-          "ssm:GetParameters",
-          "secretsmanager:GetSecretValue"
-        ]
-        Resource = "*"
-
       }
     ]
   })
@@ -196,51 +144,35 @@ resource "aws_iam_instance_profile" "devsecops_profile" {
 
 # DevSecOps Server EC2 Instance
 resource "aws_instance" "devsecops_server" {
-  # Instance configuration
-  ami           = var.ami-name
-  instance_type = var.devsecops_instance_type
-  subnet_id     = data.aws_subnet.public.id
-  key_name      = var.key-pair
-  
-  # IAM role for AWS service access
-  iam_instance_profile = aws_iam_instance_profile.devsecops_profile.name
-  
-  # Security group configuration
+  ami                    = var.ami-name
+  instance_type          = var.devsecops_instance_type
+  subnet_id              = data.aws_subnet.public.id
+  key_name               = var.key-pair
+  iam_instance_profile   = aws_iam_instance_profile.devsecops_profile.name
   vpc_security_group_ids = [aws_security_group.devsecops_sg.id]
-  
-  # User data script for initial setup
+
   user_data = file("${path.module}/scripts/devsecops-setup.sh")
-  
-  # Root volume configuration
+
   root_block_device {
-    volume_size           = 30  # GB - sufficient for DevSecOps tools
+    volume_size           = 30
     volume_type           = "gp3"
-    encrypted             = true  # Enable EBS encryption
-    delete_on_termination = true  # Destroy volume with instance
-    
-    tags = merge(
-      local.common_tags,
-      {
-        Name = "devsecops-root-volume-${var.environment}"
-      }
-    )
+    encrypted             = true
+    delete_on_termination = true
   }
 
-  # Instance metadata service (IMDS) configuration
   metadata_options {
-    http_endpoint          = "enabled"   # Enable IMDSv2
-    http_tokens            = "required"  # Require session tokens
-    http_put_response_hop_limit = 1      # Restrict container access to IMDS
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
   }
 
-  # Resource tags
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "devsecops-server-${var.environment}"
-      Role = "DevSecOps-Tools"
-    }
-  )
+  tags = {
+    Name        = "DevSecOps-Server-${terraform.workspace}"
+    Environment = terraform.workspace
+    Project     = "DevSecOps-Pipeline"
+    ManagedBy   = "Terraform"
+    Role        = "DevSecOps-Tools"
+  }
 }
 
 # Elastic IP for DevSecOps server

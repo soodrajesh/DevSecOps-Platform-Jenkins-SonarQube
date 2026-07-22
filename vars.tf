@@ -25,7 +25,7 @@ variable "instance-size" {
 variable "private-subnet1" {
   description = "Private subnet ID for EC2 deployment"
   type        = string
-  default     = "subnet-0123456789abcdef0"  # Update with actual Ireland subnet
+  default     = "subnet-0123456789abcdef0" # Update with actual Ireland subnet
 }
 
 variable "key-pair" {
@@ -37,13 +37,13 @@ variable "key-pair" {
 variable "security-group" {
   description = "Security Group ID for EC2 instance"
   type        = string
-  default     = "sg-0123456789abcdef0"  # Update with actual Ireland security group
+  default     = "sg-0123456789abcdef0" # Update with actual Ireland security group
 }
 
 variable "ec2-role" {
   description = "IAM instance profile for EC2"
   type        = string
-  default     = ""  # Will use the created IAM instance profile
+  default     = "" # Will use the created IAM instance profile
 }
 
 variable "environment" {
@@ -65,7 +65,7 @@ variable "vpc_name" {
 variable "devsecops_instance_type" {
   description = "Instance type for DevSecOps server"
   type        = string
-  default     = "t3.micro"  # Free tier eligible
+  default     = "t3.micro" # Free tier eligible
 }
 
 variable "github_webhook_secret" {
